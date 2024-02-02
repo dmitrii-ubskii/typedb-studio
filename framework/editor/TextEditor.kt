@@ -18,6 +18,12 @@
 
 package com.vaticle.typedb.studio.framework.editor
 
+import androidx.compose.animation.core.AnimationVector1D
+import androidx.compose.animation.core.KeyframesSpec
+import androidx.compose.animation.core.TwoWayConverter
+import androidx.compose.animation.core.animateValue
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.horizontalScroll
@@ -90,7 +96,6 @@ import kotlin.math.ceil
 import kotlin.math.log10
 import kotlin.math.roundToInt
 import kotlin.time.Duration.Companion.milliseconds
-import kotlinx.coroutines.delay
 import mu.KotlinLogging
 
 object TextEditor {
@@ -437,7 +442,25 @@ object TextEditor {
         state: State, line: GlyphLine, textLayout: TextLayoutResult?, font: TextStyle, fontWidth: Dp, lineGap: Dp
     ) {
         val cursor = state.target.cursor
-        var visible by remember { mutableStateOf(true) }
+        val infiniteTransition = rememberInfiniteTransition()
+        val visible = infiniteTransition.animateValue(
+            initialValue = true,
+            targetValue = false,
+            typeConverter = TwoWayConverter(
+                convertToVector = { AnimationVector1D(if (it) 1f else 0f) },
+                convertFromVector = { v -> v.value > 0.5f }
+            ),
+            animationSpec = infiniteRepeatable(
+                animation = KeyframesSpec(
+                    KeyframesSpec.KeyframesSpecConfig<Boolean>().apply {
+                        true at 0
+                        false at BLINKING_FREQUENCY.inWholeMilliseconds.toInt()
+                        true at 2 * BLINKING_FREQUENCY.inWholeMilliseconds.toInt()
+                        durationMillis = 2 * BLINKING_FREQUENCY.inWholeMilliseconds.toInt()
+                    }
+                ),
+            )
+        )
         val width = textLayout?.let {
             val textLayoutText = textLayout.layoutInput.text
             if (line.isEmpty() || textLayoutText.isEmpty()) DEFAULT_FONT_WIDTH
@@ -452,7 +475,7 @@ object TextEditor {
             toDP(it.getCursorRectSafely(charOffset).left, state.density)
         } ?: (width * cursor.col)
 
-        if (visible || !state.isFocused) {
+        if (visible.value || !state.isFocused) {
             Column(
                 modifier = Modifier.offset(x = offsetX, y = CURSOR_LINE_PADDING)
                     .width(width).height(state.lineHeight - CURSOR_LINE_PADDING * 2)
@@ -467,13 +490,6 @@ object TextEditor {
                     modifier = Modifier.offset(y = -CURSOR_LINE_PADDING),
                     style = font
                 )
-            }
-        }
-        if (state.isFocused) LaunchedEffect(cursor) {
-            visible = true
-            while (true) {
-                delay(BLINKING_FREQUENCY)
-                visible = !visible
             }
         }
     }
